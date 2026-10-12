@@ -2,7 +2,8 @@ using ShiroBot.SDK.Adapter;
 using ShiroBot.SDK.Models;
 namespace ShiroBot.Adapter.Debug;
 
-internal sealed class DebugServices(Func<DebugRuntime> runtime, Func<DebugConfig> config) : IMessageService, IChannelService, IUserService
+internal sealed class DebugServices(Func<DebugRuntime> runtime, Func<DebugConfig> config) : IMessageService, IChannelService, IUserService,
+    IFileService, IMessageInteractionService, IMessageReactionService
 {
     private readonly object _gate = new();
     private readonly Dictionary<string, MessageEvent> _messages = new();
@@ -39,6 +40,7 @@ internal sealed class DebugServices(Func<DebugRuntime> runtime, Func<DebugConfig
     private Task Operation(string type, object data, CancellationToken ct) { ct.ThrowIfCancellationRequested(); runtime().Record("outbound", type, data); return Task.CompletedTask; }
     public Task DeleteMessageAsync(Channel channel, string messageId, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         lock (_gate)
         {
             var key = $"{channel.Type}:{channel.Id}:{messageId}";
@@ -93,4 +95,17 @@ internal sealed class DebugServices(Func<DebugRuntime> runtime, Func<DebugConfig
     }
     public Task AcceptFriendRequestAsync(string token, CancellationToken cancellationToken = default) => Operation("acceptFriendRequest", new { token }, cancellationToken);
     public Task RejectFriendRequestAsync(string token, string? reason = null, CancellationToken cancellationToken = default) => Operation("rejectFriendRequest", new { token, reason }, cancellationToken);
+    public FileCapabilities GetFileCapabilities(Channel channel) => new() { CanUpload = true, UploadPublishes = false };
+    public Task<FileUploadResult> UploadAsync(Channel channel, FileUploadRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var fileId = "debug-file-" + Guid.NewGuid().ToString("N");
+        runtime().Record("outbound", "upload", new { channel, request, fileId, simulated = true });
+        return Task.FromResult(new FileUploadResult { FileId = fileId, IsPublished = false });
+    }
+    public Task AcknowledgeAsync(InteractionEvent interaction, CancellationToken cancellationToken = default) =>
+        Operation("acknowledge", new { interaction }, cancellationToken);
+    public ReactionCapabilities GetReactionCapabilities(Channel channel) => ReactionCapabilities.Unicode | ReactionCapabilities.PlatformEmoji;
+    public Task SetReactionAsync(MessageReference message, ReactionEmoji emoji, bool isAdd = true, CancellationToken cancellationToken = default) =>
+        Operation("setReaction", new { message, emoji, isAdd }, cancellationToken);
 }

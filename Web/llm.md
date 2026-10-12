@@ -29,6 +29,11 @@ curl -sS "$BASE/api/status"
 |---|---|---|
 | GET / | 无 | HTML 调试工作台 |
 | GET /llm | 无 | 本 Markdown、当前实例信息、实际路由、完整类型目录 |
+| GET /api/methods | 无 | SDK 与 Model 接口方法、重载签名、参数、示例、调用模式 |
+| POST /api/call | methodId/arguments/可选 targetId | 执行模拟服务，返回 methodId/simulated/result |
+| GET /api/mock-results | 无 | 自定义平台模拟返回值列表 |
+| POST /api/mock-results | methodId/result | 配置平台 Mock 返回值，空 200 |
+| DELETE /api/mock-results?methodId=... | URL 编码的方法 ID | 删除返回值；200 或 404 |
 | GET /api/status | 无 | platform/selfId/boundUrl/enableScripts/scriptRunner/scriptExample |
 | GET /api/catalog | 无 | events/payloads/segments/kinds/operations/rawFormat；类型字段与示例 |
 | GET /api/diagnostics | 无 | 整个进程内存与 GC、Skia 缓存、记录数量；不强制 GC |
@@ -120,4 +125,28 @@ JSON
 
 /api/diagnostics：processId、workingSetBytes（整个进程驻留内存）、managedBytes、heapSizeBytes、fragmentedBytes、gcCommittedBytes、totalAllocatedBytes（累计分配，不是当前占用）、gen0Collections/gen1Collections/gen2Collections、skiaFontCacheBytes/skiaResourceCacheBytes（未加载时 null）、retainedRecords/maxRecords。单位为字节。
 
-DebugAdapter 记录 SDK 通用发送、撤回、交互与群管理操作，查询使用有界模拟消息快照，不连接真实平台。没有 `/api/sendMessage` 等独立 SDK 操作 HTTP 入口；输出由事件处理插件产生。平台专用扩展接口（例如 IQOfficialMessageApi）未实现；模拟通过不能证明真实平台支持。目录随启动时已加载的 Model 程序集生成，新增程序集后重启刷新。
+DebugAdapter 记录 SDK 通用发送、撤回、交互与群管理操作，查询使用有界模拟消息快照，不连接真实平台。SDK 方法通过统一 POST /api/call 调用，也可由事件处理插件调用。平台专用扩展接口通过动态代理提供 Mock；模拟通过不能证明真实平台支持。目录随启动时已加载的 Model 程序集生成，新增程序集后重启刷新。
+
+## SDK 方法反射与统一调用
+
+GET /api/methods 反射 SDK、当前已加载平台 Model 的公开接口方法（含继承方法）。methodId 包含接口全名、方法名、完整参数类型，区分重载；不要只传方法名。使用目录中的 example 即可 POST /api/call。arguments 是以参数名为键的对象，可选参数可省略，CancellationToken 由 HTTP 请求取消信号注入。未知方法、参数或缺少必填参数返回 400。
+
+```sh
+curl -sS "$BASE/api/methods"
+# 保存目录里任意 callable=true 方法的 example 为 call.json，然后：
+curl -sS "$BASE/api/call" -H 'Content-Type: application/json' --data-binary @call.json
+```
+
+mode=simulation 表示 SDK 通用服务：发送、撤回、查询、群管理、文件上传、交互确认、表情回应。查询读取有界消息快照；上传仅生成模拟文件 ID，不读取本地路径或上传远端。默认接口方法（例如 AssessMessage）也可调用。
+
+mode=mock 表示平台扩展动态代理；插件通过 GetAdapterExtension 获得相同代理。调用记录为 outbound/sdkCall，data 含 methodId/arguments/simulated。默认 string 返回 debug-* ID，集合为空，bool 为 false（能力探测需自行配置为 true），对象按反射示例生成。这些是测试占位数据，不是平台响应。
+
+```json
+{"methodId":"从 /api/methods 复制的完整 methodId","result":"custom-message-id"}
+```
+
+上述正文 POST /api/mock-results，可配置平台方法返回值，包括 Task<T> 的 T；也支持同步返回值。接口、void、Stream 返回不能设为 JSON；通用 simulation 的数据来自消息快照，不接受平台 Mock 覆盖。结果最大 maxRecordBytes，方法键数量受当前反射目录约束，重启清空。删除使用 DELETE /api/mock-results?methodId=URL编码后的完整ID。
+
+Stream 输入用 {"base64":"..."}，HTTP 请求仍受 1 MiB 限制；请求拥有的输入流调用后关闭，Mock 记录只保留流元数据。返回接口对象（如 BeginStream）时 result 是 {targetId,service}，调用该接口方法时在 POST /api/call 的正文中带 targetId；最多保留 64 个返回对象，超出后旧 ID 失效，重启清空。例：BeginStream → 携带 targetId 调 AppendAsync → CompleteAsync → DisposeAsync。
+
+SDK 的宿主、渲染、配置与插件生命周期接口同样在目录中，以 hostContract 标示；它们不是 adapter 的服务对象，没有相应调用目标。泛型、委托、ref/out 方法不适合 JSON 调用，callable=false 并提供原因。事件订阅通过 /api/stream，事件上报通过 /api/events。反射调用仅允许目录中的 adapter/Model 接口，不接受任意 .NET 类型或方法。

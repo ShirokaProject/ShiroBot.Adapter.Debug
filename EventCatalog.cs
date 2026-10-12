@@ -11,13 +11,16 @@ internal sealed class EventCatalog
 {
     public JsonSerializerOptions Json { get; }
     private readonly Dictionary<string, Type> _types;
+    public Type[] Interfaces { get; }
     public EventCatalog()
     {
         // Explicit references ensure the host's shared models are loaded before discovery.
         var assemblies = new[] { typeof(BotEvent).Assembly, typeof(QEventPayload).Assembly,
             Assembly.Load("ShiroBot.Model.Discord"), Assembly.Load("ShiroBot.Model.Telegram") }
             .Concat(AppDomain.CurrentDomain.GetAssemblies().Where(a => a.GetName().Name?.StartsWith("ShiroBot.Model.") == true)).Distinct();
-        _types = assemblies.SelectMany(SafeTypes).Where(t => t.IsPublic && !t.IsAbstract && !t.ContainsGenericParameters)
+        var discovered = assemblies.SelectMany(SafeTypes).Distinct().ToArray();
+        Interfaces = discovered.Where(t => t.IsPublic && t.IsInterface).OrderBy(t => t.FullName).ToArray();
+        _types = discovered.Where(t => t.IsPublic && !t.IsAbstract && !t.ContainsGenericParameters)
             .GroupBy(t => t.FullName!).ToDictionary(g => g.Key, g => g.First());
         var resolver = new DefaultJsonTypeInfoResolver();
         resolver.Modifiers.Add(info =>
@@ -34,6 +37,7 @@ internal sealed class EventCatalog
         Json = new(JsonSerializerDefaults.Web) { TypeInfoResolver = resolver, MaxDepth = 32 };
         Json.Converters.Add(new JsonStringEnumConverter());
         Json.Converters.Add(new TypedRawConverter(_types));
+        Json.Converters.Add(new DebugStreamConverter());
     }
     private static IEnumerable<Type> SafeTypes(Assembly assembly)
     {
@@ -67,6 +71,10 @@ internal sealed class EventCatalog
         if (type == typeof(bool)) return JsonValue.Create(false);
         if (type.IsPrimitive || type == typeof(decimal)) return JsonValue.Create(1);
         if (type == typeof(object) || type == typeof(JsonElement)) return null;
+        if (typeof(Stream).IsAssignableFrom(type)) return new JsonObject { ["base64"] = "" };
+        if (type.IsGenericType && (type.GetGenericTypeDefinition() == typeof(IReadOnlyDictionary<,>)
+            || type.GetGenericTypeDefinition() == typeof(IDictionary<,>) || type.GetGenericTypeDefinition() == typeof(Dictionary<,>)))
+            return new JsonObject();
         if (type.IsGenericType && typeof(System.Collections.IEnumerable).IsAssignableFrom(type))
         {
             var item = type.GetGenericArguments()[0];
@@ -94,6 +102,19 @@ internal sealed class EventCatalog
             };
         }
         return result;
+    }
+    public JsonNode? Example(Type type, string platform) => Example(type, platform, 0);
+    private sealed class DebugStreamConverter : JsonConverter<Stream>
+    {
+        public override Stream Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options)
+        {
+            using var doc = JsonDocument.ParseValue(ref reader);
+            return new MemoryStream(Convert.FromBase64String(doc.RootElement.GetProperty("base64").GetString() ?? ""), false);
+        }
+        public override void Write(Utf8JsonWriter writer, Stream value, JsonSerializerOptions options)
+        {
+            writer.WriteStartObject(); writer.WriteBoolean("stream", true); writer.WriteBoolean("readable", value.CanRead); writer.WriteEndObject();
+        }
     }
     public BotEvent Parse(string type, JsonElement data, DebugConfig config)
     {

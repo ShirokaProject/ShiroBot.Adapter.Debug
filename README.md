@@ -59,6 +59,9 @@ script_timeout_seconds = 10
 
 | 方法 / 路径 | 用途 |
 | --- | --- |
+| `GET /api/methods` | 全部 SDK / Model 接口方法、参数和调用示例 |
+| `POST /api/call` | 按 methodId 调用 SDK 模拟服务或平台 Mock |
+| `GET/POST/DELETE /api/mock-results` | 查询、配置或删除平台模拟返回值 |
 | `GET /llm` | HTTP / LLM 完整调用文档与当前实例类型目录 |
 | `GET /api/diagnostics` | 进程内存、GC、Skia 缓存与记录数量，不触发 GC |
 | `GET /api/status` | 模拟平台、脚本执行器等运行信息 |
@@ -145,7 +148,7 @@ curl http://127.0.0.1:5088/api/scenarios/run \
 
 实现 SDK 通用消息发送、按钮/交互回复记录、撤回、历史消息读取、用户/群成员查询、群管理操作记录。查询数据来源于有界消息快照，不是真实平台数据。模拟成功不等于平台接口一定支持或授权。
 
-平台特有扩展接口（例如 `IQOfficialMessageApi`、平台上传/审批接口）当前未实现，插件能力探测会返回 null。平台 Model 的事件与消息段可以注入/记录，但不模拟全部平台 API。
+SDK 通用服务与平台扩展均提供调试调用：`GET /api/methods` 自动反射接口、重载、参数和返回类型；`POST /api/call` 统一调用。平台接口（例如 `IQOfficialMessageApi`、上传/审批）通过动态代理提供 Mock，插件可以通过 `GetAdapterExtension` 获取；自定义返回值通过 `/api/mock-results` 配置。Mock 不连接真实平台，能力布尔值默认 false，需按测试需求配置。宿主/渲染/生命周期接口只列出契约，不作为 adapter 服务执行。详细用法和当前方法目录见 `/llm`。
 
 最多 32 个 SSE 客户端，每个队列 128 项；慢客户端会断开。请求上限 1 MiB，记录及消息快照数量有界，大记录只保留摘要。停止服务会取消触发任务、关闭订阅并释放网络资源。
 

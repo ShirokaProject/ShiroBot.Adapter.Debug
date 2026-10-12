@@ -17,6 +17,7 @@ public sealed class DebugAdapter : IBotAdapter, IConfigurableAdapter, IConfigura
 {
     private WebApplication? _app;
     private DebugRuntime? _runtime;
+    private MethodCatalog? _methods;
     private readonly DebugServices _services;
     private readonly Events _events;
     public DebugAdapter() { _services = new(() => _runtime ?? throw new InvalidOperationException("Adapter is stopped."), () => CurrentConfigValue); _events = new(); }
@@ -30,6 +31,7 @@ public sealed class DebugAdapter : IBotAdapter, IConfigurableAdapter, IConfigura
     public IUserService User => _services;
     public IEventService Event => _events;
     public string? BoundUrl { get; private set; }
+    public TService? GetExtension<TService>() where TService : class => _methods?.Resolve(typeof(TService)) as TService;
     public Task OnConfigLoadedAsync(DebugConfig config, CancellationToken cancellationToken) { config.Validate(); CurrentConfigValue = config; return Task.CompletedTask; }
     public Task OnConfigChangedAsync(DebugConfig previous, DebugConfig config, CancellationToken cancellationToken) => OnConfigLoadedAsync(config, cancellationToken);
     public async Task StartAsync()
@@ -37,6 +39,8 @@ public sealed class DebugAdapter : IBotAdapter, IConfigurableAdapter, IConfigura
         await StopAsync(); CurrentConfigValue.Validate();
         var runtime = new DebugRuntime(CurrentConfigValue, message => Logger?.Warning(message));
         _runtime = runtime;
+        var methods = new MethodCatalog(runtime, _services, CurrentConfigValue);
+        _methods = methods;
         runtime.EventReceived += async value => { _services.Remember(value); await _events.Publish(value); };
         try
         {
@@ -53,7 +57,7 @@ public sealed class DebugAdapter : IBotAdapter, IConfigurableAdapter, IConfigura
                 ctx.Response.Headers["X-Content-Type-Options"] = "nosniff";
                 ctx.Response.Headers["Cache-Control"] = "no-store";
                 try { await next(ctx); }
-                catch (Exception ex) when (ex is ArgumentException or JsonException or NotSupportedException or InvalidOperationException)
+                catch (Exception ex) when (ex is ArgumentException or JsonException or NotSupportedException or InvalidOperationException or FormatException)
                 {
                     if (!ctx.Response.HasStarted) { ctx.Response.StatusCode = 400; await ctx.Response.WriteAsJsonAsync(new { error = ex.Message }); }
                 }
@@ -66,9 +70,16 @@ public sealed class DebugAdapter : IBotAdapter, IConfigurableAdapter, IConfigura
             });
             app.MapGet("/api/catalog", () => Results.Json(runtime.Catalog.Describe(Platform), runtime.Catalog.Json));
             app.MapGet("/llm", () => Results.Text(
-                LlmDocumentation.Render(BoundUrl!, CurrentConfigValue, runtime.Catalog,
+                LlmDocumentation.Render(BoundUrl!, CurrentConfigValue, runtime.Catalog, methods,
                     ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)),
                 "text/markdown; charset=utf-8"));
+            app.MapGet("/api/methods", () => Results.Json(methods.Describe(), runtime.Catalog.Json));
+            app.MapPost("/api/call", async Task<IResult> (HttpContext ctx) =>
+                Results.Json(await methods.CallAsync(await Read<MethodCall>(ctx, runtime), ctx.RequestAborted), runtime.Catalog.Json));
+            app.MapGet("/api/mock-results", () => Results.Json(methods.Results(), runtime.Catalog.Json));
+            app.MapPost("/api/mock-results", async Task<IResult> (HttpContext ctx) =>
+            { methods.SetResult(await Read<MockResult>(ctx, runtime)); return Results.Ok(); });
+            app.MapDelete("/api/mock-results", (string methodId) => methods.DeleteResult(methodId) ? Results.Ok() : Results.NotFound());
             app.MapGet("/api/diagnostics", () =>
             {
                 using var process = System.Diagnostics.Process.GetCurrentProcess();
@@ -130,7 +141,7 @@ public sealed class DebugAdapter : IBotAdapter, IConfigurableAdapter, IConfigura
         try { if (runtime != null) await runtime.DisposeAsync(); }
         finally
         {
-            _runtime = null; _services.Clear();
+            _runtime = null; _methods?.Clear(); _methods = null; _services.Clear();
             if (app != null) { try { await app.StopAsync(TimeSpan.FromSeconds(5)); } finally { await app.DisposeAsync(); } }
         }
     }
