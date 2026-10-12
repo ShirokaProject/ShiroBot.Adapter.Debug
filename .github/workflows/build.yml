@@ -1,0 +1,38 @@
+name: Build and test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: debug-adapter
+      - uses: actions/checkout@v4
+        with:
+          repository: ShirokaProject/ShiroBot
+          ref: ced05d0fc8260dc95ff2839fe2d4f15363c9bebe
+          path: ShiroBot
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test
+        working-directory: debug-adapter
+        run: dotnet test tests/DebugAdapter.Tests/DebugAdapter.Tests.csproj --configuration Release -p:ShiroBotSourceRoot=${{ github.workspace }}/ShiroBot
+      - name: Build adapter
+        working-directory: debug-adapter
+        run: dotnet build ShiroBot.Adapter.Debug.csproj --configuration Release -p:ShiroBotSourceRoot=${{ github.workspace }}/ShiroBot
+      - name: Package
+        working-directory: debug-adapter
+        run: |
+          mkdir -p package
+          cp bin/Release/net10.0/ShiroBot.Adapter.Debug.dll README.md package/
+          cp -R examples package/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debug-adapter
+          path: debug-adapter/package/

@@ -1,0 +1,5 @@
+{
+  "events": [{"type": "ShiroBot.SDK.Models.MessageEvent", "data": {"messageId": "test-ping", "channel": {"id": "group-1", "type": "Group"}, "sender": {"id": "user-1"}, "segments": [{"$type": "ShiroBot.SDK.Models.TextSegment", "text": "#ping"}]}}],
+  "expect": [{"type": "sendMessage", "direction": "outbound", "contains": "pong", "count": 1}],
+  "timeoutMilliseconds": 3000
+}
