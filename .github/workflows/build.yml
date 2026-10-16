@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ShirokaProject/ShiroBot
-          ref: ced05d0fc8260dc95ff2839fe2d4f15363c9bebe
+          ref: 91fbc0e87d51a72ef884054306278cee65ada088
           path: ShiroBot
       - uses: actions/setup-dotnet@v4
         with:
@@ -26,13 +26,49 @@ jobs:
       - name: Build adapter
         working-directory: debug-adapter
         run: dotnet build ShiroBot.Adapter.Debug.csproj --configuration Release -p:ShiroBotSourceRoot=${{ github.workspace }}/ShiroBot
+      - name: Check packaged adapter version
+        working-directory: debug-adapter
+        shell: bash
+        run: |
+          version="$(dotnet msbuild ShiroBot.Adapter.Debug.csproj -getProperty:Version -p:Configuration=Release -p:ShiroBotSourceRoot="$GITHUB_WORKSPACE/ShiroBot")"
+          expected="$version"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            expected="${GITHUB_REF_NAME#v}"
+          fi
+          dotnet run --project scripts/version-check/VersionCheck.csproj -c Release -- \
+            bin/Release/net10.0/ShiroBot.Adapter.Debug.dll "$version" "$expected"
       - name: Package
         working-directory: debug-adapter
         run: |
           mkdir -p package
           cp bin/Release/net10.0/ShiroBot.Adapter.Debug.dll README.md package/
           cp -R examples package/
+          (cd package && zip -qr ../ShiroBot.Adapter.Debug.zip ShiroBot.Adapter.Debug.dll)
       - uses: actions/upload-artifact@v4
         with:
           name: debug-adapter
           path: debug-adapter/package/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adapter-release
+          path: debug-adapter/ShiroBot.Adapter.Debug.zip
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: adapter-release
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: .github/release-notes.md
+          files: artifacts/ShiroBot.Adapter.Debug.zip
+          fail_on_unmatched_files: true

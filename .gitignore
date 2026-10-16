@@ -3,5 +3,6 @@
 artifacts/
 .DS_Store
 package/
+ShiroBot.Adapter.Debug.zip
 *.user
 *.suo

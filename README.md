@@ -68,6 +68,7 @@ script_timeout_seconds = 10
 | `GET /api/catalog` | 事件、Model、消息段、字段、示例与 QQ Kind |
 | `POST /api/events` | 注入事件 |
 | `GET /api/records?after=0` | 查询记录，按递增 ID 过滤 |
+| `DELETE /api/records` | 清空历史记录并返回清理数量，保留递增 ID |
 | `GET /api/stream` | SSE 实时记录（支持 Authorization 请求头） |
 | `GET /api/rules` | 查询规则 |
 | `POST /api/rules` | 添加或更新规则，相同 ID 替换 |
@@ -163,3 +164,5 @@ dotnet test tests/DebugAdapter.Tests/DebugAdapter.Tests.csproj
 内存诊断：页面中的「读取内存快照」及 `GET /api/diagnostics` 返回整个进程的 Working Set、托管内存、最近 GC 堆大小、碎片、累计分配、各代 GC 次数和调试记录数量。此接口不触发 GC。生成场景时默认匹配任意 sendMessage 回复；可修改 contains 添加内容断言。
 
 内存快照同时提供 `gcCommittedBytes`、`fragmentedBytes` 与已加载 Skia 的字体/图片缓存字节数；未加载 Skia 时缓存字段为 null。此接口不执行 GC 或清空缓存。
+
+群文件列表等 `ValueTuple` 返回值的 Mock 使用 `item1`、`item2` 字段，例如 `{"item1":[{"groupId":"123","fileId":"a","fileName":"demo.txt"}],"item2":[]}`。大于记录上限的字符串在构建诊断快照前被拦截；这不改变模拟发送的数据和接口请求本身的大小。

@@ -39,6 +39,7 @@ curl -sS "$BASE/api/status"
 | GET /api/diagnostics | 无 | 整个进程内存与 GC、Skia 缓存、记录数量；不强制 GC |
 | POST /api/events | EventInput，见下文 | 注入后的 inbound DebugRecord，宿主处理后记录 outbound |
 | GET /api/records?after=0 | 可选 after：long，默认 0 | id > after 的现存记录数组，按 id 升序 |
+| DELETE /api/records | 无 | 清空服务端记录，返回 cleared；不重置递增 ID，不触发 GC |
 | GET /api/stream | 无 | text/event-stream，只推送订阅后的记录 |
 | GET /api/rules | 无 | TriggerRule 数组 |
 | POST /api/rules | 单个 TriggerRule | 空 200；相同 id 替换并重置触发计数 |
@@ -123,7 +124,7 @@ JSON
 
 ## 内存诊断字段与能力边界
 
-/api/diagnostics：processId、workingSetBytes（整个进程驻留内存）、managedBytes、heapSizeBytes、fragmentedBytes、gcCommittedBytes、totalAllocatedBytes（累计分配，不是当前占用）、gen0Collections/gen1Collections/gen2Collections、skiaFontCacheBytes/skiaResourceCacheBytes（未加载时 null）、retainedRecords/maxRecords。单位为字节。
+/api/diagnostics：processId、sampledAt、workingSetBytes（整个进程驻留内存）、managedBytes、heapSizeBytes、fragmentedBytes、gcCommittedBytes、totalAllocatedBytes（累计分配，不是当前占用）、serverGC、assemblyCount、threadCount、gcIndex、gcPauseTimePercentage、gen0Collections/gen1Collections/gen2Collections、generations（按索引对应 gen0/gen1/gen2/LOH/POH，包含最近 GC 前后空间与碎片）、skiaFontCacheBytes/skiaResourceCacheBytes（未加载时 null）、retainedRecords/maxRecords。单位为字节。最近一次 GC 的空间不等于当前存活对象；采样本身不强制 GC。
 
 DebugAdapter 记录 SDK 通用发送、撤回、交互与群管理操作，查询使用有界模拟消息快照，不连接真实平台。SDK 方法通过统一 POST /api/call 调用，也可由事件处理插件调用。平台专用扩展接口通过动态代理提供 Mock；模拟通过不能证明真实平台支持。目录随启动时已加载的 Model 程序集生成，新增程序集后重启刷新。
 

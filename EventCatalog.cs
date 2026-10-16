@@ -34,7 +34,7 @@ internal sealed class EventCatalog
             info.PolymorphismOptions = new JsonPolymorphismOptions { TypeDiscriminatorPropertyName = "$type" };
             foreach (var child in children) info.PolymorphismOptions.DerivedTypes.Add(new(child, child.FullName!));
         });
-        Json = new(JsonSerializerDefaults.Web) { TypeInfoResolver = resolver, MaxDepth = 32 };
+        Json = new(JsonSerializerDefaults.Web) { TypeInfoResolver = resolver, MaxDepth = 32, IncludeFields = true };
         Json.Converters.Add(new JsonStringEnumConverter());
         Json.Converters.Add(new TypedRawConverter(_types));
         Json.Converters.Add(new DebugStreamConverter());
@@ -86,8 +86,16 @@ internal sealed class EventCatalog
             var child = type == typeof(MessageSegment) ? typeof(TextSegment) : _types.Values.FirstOrDefault(t => type.IsAssignableFrom(t));
             if (child is null) return null;
             var obj = new JsonObject { ["$type"] = child.FullName };
-            foreach (var pair in (JsonObject)Example(child, platform, depth + 1)!) obj[pair.Key] = pair.Value?.DeepClone();
+            if (Example(child, platform, depth + 1) is not JsonObject fields) return null;
+            foreach (var pair in fields) obj[pair.Key] = pair.Value?.DeepClone();
             return obj;
+        }
+        if (type.IsValueType && type.FullName?.StartsWith("System.ValueTuple`", StringComparison.Ordinal) == true)
+        {
+            var tuple = new JsonObject();
+            foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
+                tuple[JsonNamingPolicy.CamelCase.ConvertName(field.Name)] = Example(field.FieldType, platform, depth + 1);
+            return tuple;
         }
         var result = new JsonObject();
         foreach (var p in type.GetProperties().Where(p => p.SetMethod != null))

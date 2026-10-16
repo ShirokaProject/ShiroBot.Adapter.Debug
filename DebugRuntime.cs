@@ -28,15 +28,19 @@ internal sealed class DebugRuntime : IAsyncDisposable
     private readonly Task _worker;
     private long _id, _subscriberId;
     private bool _disposed;
+    private readonly BoundedJson _snapshots;
     public event Func<BotEvent, Task>? EventReceived;
     private readonly AsyncLocal<(string? Id, int Depth)> _context = new();
     public DebugRuntime(DebugConfig config, Action<string> log)
     {
         _config = config; _log = log;
+        _snapshots = new(Catalog.Json, config.MaxRecordBytes);
         _worker = RunTriggersAsync();
     }
     public long LastId { get { lock (_gate) return _id; } }
     public DebugRecord[] Records(long after = 0) { lock (_gate) return _records.Where(r => r.Id > after).ToArray(); }
+    public int RecordCount { get { lock (_gate) return _records.Count; } }
+    public int ClearRecords() { lock (_gate) { var count = _records.Count; _records.Clear(); return count; } }
     public TriggerRule[] Rules() { lock (_gate) return _rules.Values.ToArray(); }
     public void SetRule(TriggerRule rule)
     {
@@ -54,9 +58,8 @@ internal sealed class DebugRuntime : IAsyncDisposable
     public bool DeleteRule(string id) { lock (_gate) { _ruleExecutions.Remove(id); return _rules.Remove(id); } }
     public DebugRecord Record(string direction, string type, object data, string? correlation = null, int? depth = null)
     {
-        var json = JsonSerializer.SerializeToElement(data, data.GetType(), Catalog.Json);
-        if (Encoding.UTF8.GetByteCount(json.GetRawText()) > _config.MaxRecordBytes)
-            json = JsonSerializer.SerializeToElement(new { truncated = true, message = "Record exceeded MaxRecordBytes", originalType = type });
+        var json = _snapshots.Snapshot(data)
+            ?? JsonSerializer.SerializeToElement(new { truncated = true, message = "Record exceeded MaxRecordBytes", originalType = type });
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -81,6 +84,7 @@ internal sealed class DebugRuntime : IAsyncDisposable
             return record;
         }
     }
+    internal bool FitsSnapshot(object value) => _snapshots.Fits(value);
     public (string? Id, int? Depth) SourceContext(ShiroBot.SDK.Models.Channel channel, string? messageId)
     {
         if (messageId is null) return (null, null);

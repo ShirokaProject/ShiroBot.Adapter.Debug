@@ -11,7 +11,7 @@ internal sealed class DebugServices(Func<DebugRuntime> runtime, Func<DebugConfig
     private void Store(MessageEvent message)
     {
         var key = $"{message.Channel.Type}:{message.Channel.Id}:{message.MessageId}";
-        if (System.Text.Encoding.UTF8.GetByteCount(System.Text.Json.JsonSerializer.Serialize(message, runtime().Catalog.Json)) > config().MaxRecordBytes) return;
+        if (!runtime().FitsSnapshot(message)) return;
         lock (_gate)
         {
             if (!_messages.ContainsKey(key)) _order.Enqueue(key);

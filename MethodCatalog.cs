@@ -109,6 +109,8 @@ internal sealed class MethodCatalog(DebugRuntime runtime, DebugServices services
             if (definition == typeof(IReadOnlyDictionary<,>) || definition == typeof(IDictionary<,>)) return Activator.CreateInstance(typeof(Dictionary<,>).MakeGenericType(type.GetGenericArguments()));
             if (typeof(System.Collections.IEnumerable).IsAssignableFrom(type)) return Array.CreateInstance(type.GetGenericArguments()[0], 0);
         }
+        if (type.IsValueType && type.FullName?.StartsWith("System.ValueTuple`", StringComparison.Ordinal) == true)
+            return Activator.CreateInstance(type, type.GetGenericArguments().Select(Default).ToArray());
         var example = runtime.Catalog.Example(type, config.Platform);
         return example?.Deserialize(type, runtime.Catalog.Json);
     }

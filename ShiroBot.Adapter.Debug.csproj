@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
-    <Version>0.1.0</Version><ShiroBotPluginPackagingEnabled>true</ShiroBotPluginPackagingEnabled>
+    <Version>0.1.1</Version><ShiroBotPluginPackagingEnabled>true</ShiroBotPluginPackagingEnabled>
     <ShiroBotSourceRoot Condition="'$(ShiroBotSourceRoot)' == '' and Exists('$(MSBuildThisFileDirectory)../ShiroBot/SDK/ShiroBot.SDK.csproj')">$(MSBuildThisFileDirectory)../ShiroBot</ShiroBotSourceRoot>
     <ShiroBotSourceRoot Condition="'$(ShiroBotSourceRoot)' == ''">$(MSBuildThisFileDirectory)../../ShiroBot</ShiroBotSourceRoot>
     <ShiroBotPluginSharedAssemblies>ShiroBot.Model.QQ;ShiroBot.Model.Discord;ShiroBot.Model.Telegram</ShiroBotPluginSharedAssemblies>
@@ -13,7 +13,7 @@
     <ProjectReference Include="$(ShiroBotSourceRoot)/Models/QQ/ShiroBot.Model.QQ.csproj" Private="false" />
     <ProjectReference Include="$(ShiroBotSourceRoot)/Models/Discord/ShiroBot.Model.Discord.csproj" Private="false" />
     <ProjectReference Include="$(ShiroBotSourceRoot)/Models/Telegram/ShiroBot.Model.Telegram.csproj" Private="false" />
-    <Compile Remove="tests/**/*.cs" /><Compile Remove="tools/**/*.cs" /><EmbeddedResource Include="Web/index.html" /><EmbeddedResource Include="Web/llm.md" />
+    <Compile Remove="tests/**/*.cs" /><Compile Remove="tools/**/*.cs" /><Compile Remove="scripts/**/*.cs" /><EmbeddedResource Include="Web/index.html" /><EmbeddedResource Include="Web/llm.md" />
     <InternalsVisibleTo Include="DebugAdapter.Tests" />
   </ItemGroup>
   <Import Project="$(ShiroBotSourceRoot)/SDK/buildTransitive/ShiroBot.SDK.targets" />

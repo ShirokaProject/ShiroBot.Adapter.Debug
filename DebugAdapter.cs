@@ -12,7 +12,7 @@ using ShiroBot.SDK.Models;
 using ShiroBot.SDK.Plugin;
 [assembly: ShiroBotApiCompatibility("0.9.2", "0.9.2")]
 namespace ShiroBot.Adapter.Debug;
-[BotAdapter("debug", Name = "DebugAdapter", Version = "0.1.0", Description = "Model event simulator, WebAPI, live console and script triggers", Author = "ShirokaProject", Protocol = "debug", IsSingleFile = true)]
+[BotAdapter("debug", Name = "DebugAdapter", Version = "0.1.1", Description = "Model event simulator, WebAPI, live console and script triggers", Author = "ShirokaProject", Protocol = "debug", IsSingleFile = true)]
 public sealed class DebugAdapter : IBotAdapter, IConfigurableAdapter, IConfigurableComponent<DebugConfig>
 {
     private WebApplication? _app;
@@ -92,13 +92,20 @@ public sealed class DebugAdapter : IBotAdapter, IConfigurableAdapter, IConfigura
                     catch { return null; }
                 }
                 return Results.Json(new { processId = process.Id, workingSetBytes = process.WorkingSet64,
+                    sampledAt = DateTimeOffset.UtcNow, serverGC = System.Runtime.GCSettings.IsServerGC,
+                    assemblyCount = AppDomain.CurrentDomain.GetAssemblies().Length,
+                    threadCount = process.Threads.Count,
+                    gcIndex = gc.Index, gcPauseTimePercentage = gc.PauseTimePercentage,
+                    generations = gc.GenerationInfo.ToArray().Select((generation, index) => new
+                    { index, generation.SizeBeforeBytes, generation.SizeAfterBytes,
+                        generation.FragmentationBeforeBytes, generation.FragmentationAfterBytes }),
                     managedBytes = GC.GetTotalMemory(false), heapSizeBytes = gc.HeapSizeBytes, fragmentedBytes = gc.FragmentedBytes,
                     skiaFontCacheBytes = ReadSkiaCache("GetFontCacheUsed"),
                     skiaResourceCacheBytes = ReadSkiaCache("GetResourceCacheTotalBytesUsed"),
                     gcCommittedBytes = gc.TotalCommittedBytes,
                     totalAllocatedBytes = GC.GetTotalAllocatedBytes(), gen0Collections = GC.CollectionCount(0),
                     gen1Collections = GC.CollectionCount(1), gen2Collections = GC.CollectionCount(2),
-                    retainedRecords = runtime.Records(0).Length, maxRecords = CurrentConfigValue.MaxRecords });
+                    retainedRecords = runtime.RecordCount, maxRecords = CurrentConfigValue.MaxRecords });
             });
             app.MapGet("/api/status", () => Results.Json(new { platform = Platform, selfId = CurrentConfigValue.SelfId, boundUrl = BoundUrl, enableScripts = CurrentConfigValue.EnableScripts, scriptRunner = CurrentConfigValue.ScriptRunner, scriptExample = OperatingSystem.IsWindows() ? "check_reply.ps1" : "check_reply.sh" }));
             app.MapPost("/api/events", async Task<IResult> (HttpContext ctx) =>
@@ -108,6 +115,7 @@ public sealed class DebugAdapter : IBotAdapter, IConfigurableAdapter, IConfigura
                 return Results.Json(record, runtime.Catalog.Json);
             });
             app.MapGet("/api/records", (long? after) => Results.Json(runtime.Records(after ?? 0), runtime.Catalog.Json));
+            app.MapDelete("/api/records", () => Results.Ok(new { cleared = runtime.ClearRecords() }));
             app.MapGet("/api/rules", () => Results.Json(runtime.Rules(), runtime.Catalog.Json));
             app.MapPost("/api/rules", async Task<IResult> (HttpContext ctx) => { runtime.SetRule(await Read<TriggerRule>(ctx, runtime)); return Results.Ok(); });
             app.MapDelete("/api/rules/{id}", (string id) => runtime.DeleteRule(id) ? Results.Ok() : Results.NotFound());

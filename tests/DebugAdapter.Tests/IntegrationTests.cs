@@ -50,6 +50,17 @@ public sealed class IntegrationTests
             Assert.True(scenario.IsSuccessStatusCode, await scenario.Content.ReadAsStringAsync());
             var result = await scenario.Content.ReadFromJsonAsync<JsonElement>();
             Assert.True(result.GetProperty("passed").GetBoolean());
+            var lastRecordId = (await client.GetFromJsonAsync<JsonElement>("/api/records")).EnumerateArray().Max(r => r.GetProperty("id").GetInt64());
+            var clearedResponse = await client.DeleteAsync("/api/records");
+            Assert.True(clearedResponse.IsSuccessStatusCode);
+            var cleared = await clearedResponse.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(4, cleared.GetProperty("cleared").GetInt32());
+            Assert.Equal(0, (await client.GetFromJsonAsync<JsonElement>("/api/records")).GetArrayLength());
+            Assert.Equal(0, (await client.GetFromJsonAsync<JsonElement>("/api/diagnostics")).GetProperty("retainedRecords").GetInt32());
+            await client.PostAsJsonAsync("/api/events", Message());
+            var newRecords = await client.GetFromJsonAsync<JsonElement>("/api/records");
+            Assert.Equal(2, newRecords.GetArrayLength());
+            Assert.True(newRecords[0].GetProperty("id").GetInt64() > lastRecordId);
             var bad = await client.PostAsJsonAsync("/api/events", new EventInput("System.IO.File", JsonSerializer.SerializeToElement(new { })));
             Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
             var origin = new HttpRequestMessage(HttpMethod.Post, "/api/events") { Content = JsonContent.Create(Message()) };
